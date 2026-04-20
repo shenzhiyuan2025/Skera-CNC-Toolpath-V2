@@ -5,45 +5,6 @@ import { evaluateToolpath, ToolpathEvaluationResult } from '../services/toolpath
 type UiLevel = 'blocker' | 'high' | 'medium' | 'low';
 type Lamp = 'green' | 'yellow' | 'red';
 
-const demoResult: ToolpathEvaluationResult = {
-  final_conclusion: 'yellow',
-  allow_continue: true,
-  summary: '存在注意事项，建议确认后继续。',
-  total_score: 86.1,
-  dimension_scores: {
-    D1: 22.5,
-    D2: 17.2,
-    D3: 12.8,
-    D4: 10.2,
-    D5: 8.7,
-    D6: 6.9,
-    D7: 8.4
-  },
-  issue_counts: { blocker: 0, high: 1, medium: 1, low: 1 },
-  issues: [
-    { code: 'D6_MOD_003', title: '缺少平面声明', description: '程序前段未声明 G17/G18/G19', severity: 'medium', category: 'gcode_quality', dimension: 'D6', line_range: [1, 30], suggestion: '建议在程序头部显式声明平面（常见为 G17）。' },
-    { code: 'D4_EFF_002', title: '空走比例偏高', description: '空走比例高于建议阈值', severity: 'low', category: 'efficiency', dimension: 'D4', line_range: [128, 128], suggestion: '优化工序路径顺序，减少回撤。' },
-    { code: 'D1_SAF_002', title: '接近姿态上限', description: '低高度区间姿态变化较激进', severity: 'high', category: 'safety', dimension: 'D1', line_range: [286, 286], suggestion: '低 Z 区减小 B/C 轴变化速率。' }
-  ],
-  metrics: {
-    motion_segments: 4820,
-    total_distance_mm: 1487.3,
-    rapid_ratio: 0.42
-  },
-  artifacts: {
-    summary_md: '# 刀路测评结果\n\n- 结论: yellow\n- 总分: 86.10\n',
-    summary_json: '{}',
-    issues_json: '[]',
-    metrics_csv: ''
-  },
-  task_meta: {
-    file_name: 'demo_5axis.nc',
-    software_source: 'AICAM',
-    machine_model: 'Desk 5X CNC',
-    evaluated_at: new Date().toISOString()
-  }
-};
-
 const issueStyle: Record<string, string> = {
   blocker: 'bg-red-100 text-red-700',
   critical: 'bg-red-100 text-red-700',
@@ -77,24 +38,24 @@ export const ToolpathBenchmark: React.FC = () => {
   const [result, setResult] = useState<ToolpathEvaluationResult | null>(null);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
-  const displayResult = result ?? demoResult;
-  const isDemoMode = result === null;
+  const hasResult = Boolean(result);
+  const displayResult = result;
 
-  const issueCounts = displayResult.issue_counts;
+  const issueCounts = displayResult?.issue_counts ?? { blocker: 0, high: 0, medium: 0, low: 0 };
 
-  const lamp = useMemo<Lamp>(() => displayResult.final_conclusion, [displayResult.final_conclusion]);
+  const lamp = useMemo<Lamp>(() => displayResult?.final_conclusion ?? 'yellow', [displayResult?.final_conclusion]);
 
   const scorePanels = useMemo(
     () => [
-      { key: 'D1', label: 'D1 安全与可达性', score: displayResult.dimension_scores.D1 ?? 0, max: 25 },
-      { key: 'D2', label: 'D2 几何正确性与覆盖', score: displayResult.dimension_scores.D2 ?? 0, max: 20 },
-      { key: 'D3', label: 'D3 表面质量潜力', score: displayResult.dimension_scores.D3 ?? 0, max: 15 },
-      { key: 'D4', label: 'D4 效率', score: displayResult.dimension_scores.D4 ?? 0, max: 12 },
-      { key: 'D5', label: 'D5 运动平稳性', score: displayResult.dimension_scores.D5 ?? 0, max: 10 },
-      { key: 'D6', label: 'D6 规范与适配', score: displayResult.dimension_scores.D6 ?? 0, max: 8 },
-      { key: 'D7', label: 'D7 工艺策略', score: displayResult.dimension_scores.D7 ?? 0, max: 10 }
+      { key: 'D1', label: 'D1 安全与可达性', score: displayResult?.dimension_scores.D1 ?? 0, max: 25 },
+      { key: 'D2', label: 'D2 几何正确性与覆盖', score: displayResult?.dimension_scores.D2 ?? 0, max: 20 },
+      { key: 'D3', label: 'D3 表面质量潜力', score: displayResult?.dimension_scores.D3 ?? 0, max: 15 },
+      { key: 'D4', label: 'D4 效率', score: displayResult?.dimension_scores.D4 ?? 0, max: 12 },
+      { key: 'D5', label: 'D5 运动平稳性', score: displayResult?.dimension_scores.D5 ?? 0, max: 10 },
+      { key: 'D6', label: 'D6 规范与适配', score: displayResult?.dimension_scores.D6 ?? 0, max: 8 },
+      { key: 'D7', label: 'D7 工艺策略', score: displayResult?.dimension_scores.D7 ?? 0, max: 10 }
     ],
-    [displayResult.dimension_scores]
+    [displayResult?.dimension_scores]
   );
 
   const handleAnalyze = async () => {
@@ -144,7 +105,7 @@ export const ToolpathBenchmark: React.FC = () => {
   const issueLineSeverity = useMemo(() => {
     const order: Record<UiLevel, number> = { blocker: 4, high: 3, medium: 2, low: 1 };
     const map = new Map<number, UiLevel>();
-    for (const it of displayResult.issues) {
+    for (const it of displayResult?.issues ?? []) {
       const r = it.line_range;
       if (!r || r.length < 2) {
         continue;
@@ -159,18 +120,18 @@ export const ToolpathBenchmark: React.FC = () => {
       }
     }
     return map;
-  }, [displayResult.issues]);
+  }, [displayResult?.issues]);
 
   const categoryBuckets = useMemo(() => {
     const buckets = new Map<string, ToolpathEvaluationResult['issues']>();
-    for (const it of displayResult.issues) {
+    for (const it of displayResult?.issues ?? []) {
       const key = it.category || 'uncategorized';
       const arr = buckets.get(key) ?? [];
       arr.push(it);
       buckets.set(key, arr);
     }
     return Array.from(buckets.entries()).sort((a, b) => b[1].length - a[1].length);
-  }, [displayResult.issues]);
+  }, [displayResult?.issues]);
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
@@ -195,7 +156,6 @@ export const ToolpathBenchmark: React.FC = () => {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-800">任务输入</h2>
-            {isDemoMode && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">当前为 Demo 结果展示</span>}
           </div>
           <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="space-y-1">
@@ -272,6 +232,8 @@ export const ToolpathBenchmark: React.FC = () => {
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </section>
 
+        {hasResult && (
+          <>
         <section className={`rounded-2xl border p-5 shadow-sm ${lampStyle[lamp]}`}>
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
@@ -279,12 +241,12 @@ export const ToolpathBenchmark: React.FC = () => {
                 {lamp === 'red' ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
                 {lampText[lamp]}
               </div>
-              <div className="text-3xl font-bold">总分 {displayResult.total_score.toFixed(1)}</div>
+              <div className="text-3xl font-bold">总分 {displayResult?.total_score.toFixed(1)}</div>
             </div>
             <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
               <div><span className="text-slate-500">任务：</span><span className="font-medium text-slate-800">AICAM-Bench-20260416</span></div>
               <div><span className="text-slate-500">软件来源：</span><span className="font-medium text-slate-800">{softwareSource.trim() || '未填写'}</span></div>
-              <div><span className="text-slate-500">文件：</span><span className="font-medium text-slate-800">{file?.name ?? 'demo_5axis.nc'}</span></div>
+              <div><span className="text-slate-500">文件：</span><span className="font-medium text-slate-800">{file?.name || String(displayResult?.task_meta?.file_name || '未命名')}</span></div>
               <div><span className="text-slate-500">机床：</span><span className="font-medium text-slate-800">{machineModel.trim() || 'Desk 5X CNC'}</span></div>
               <div className="inline-flex items-center gap-1.5"><Clock3 className="h-4 w-4 text-slate-500" /><span className="text-slate-500">测评时间：</span><span className="font-medium text-slate-800">{new Date().toLocaleString()}</span></div>
             </div>
@@ -297,15 +259,15 @@ export const ToolpathBenchmark: React.FC = () => {
             <div className="space-y-2 text-sm">
               <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
                 <span className="text-slate-600">门禁状态</span>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${displayResult.final_conclusion === 'red' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                  {displayResult.final_conclusion === 'red' ? '触发阻断' : '通过'}
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${displayResult?.final_conclusion === 'red' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {displayResult?.final_conclusion === 'red' ? '触发阻断' : '通过'}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
                 <span className="text-slate-600">Blocker</span>
                 <span className="font-semibold text-red-600">{issueCounts.blocker}</span>
               </div>
-              <div className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600">{displayResult.summary}</div>
+              <div className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600">{displayResult?.summary}</div>
             </div>
           </div>
 
@@ -388,7 +350,7 @@ export const ToolpathBenchmark: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayResult.issues.slice(0, 8).map((item, idx) => (
+                  {displayResult?.issues.slice(0, 8).map((item, idx) => (
                     <tr key={`${item.code}_${idx}`} className="border-t border-slate-100 text-xs">
                       <td className="px-3 py-2">
                         <span className={`rounded px-2 py-0.5 ${issueStyle[item.severity] || issueStyle.low}`}>{item.severity}</span>
@@ -441,6 +403,8 @@ export const ToolpathBenchmark: React.FC = () => {
             </div>
           </div>
         </section>
+          </>
+        )}
       </main>
     </div>
   );
