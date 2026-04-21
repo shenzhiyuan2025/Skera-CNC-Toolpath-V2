@@ -16,9 +16,8 @@ def _segment_length(start: Dict[str, float], end: Dict[str, float]) -> float:
     )
 
 
-def build_motion_segments(blocks: List[GCodeBlock]) -> Tuple[List[MotionSegment], Dict[str, Any], List[MachineState]]:
+def build_motion_segments(blocks: List[GCodeBlock]) -> Tuple[List[MotionSegment], Dict[str, Any]]:
     state = MachineState()
-    history = [replace(state)]
     segments: List[MotionSegment] = []
 
     metrics: Dict[str, Any] = {
@@ -37,7 +36,6 @@ def build_motion_segments(blocks: List[GCodeBlock]) -> Tuple[List[MotionSegment]
     for idx, block in enumerate(blocks):
         start_state = replace(state)
         state = apply_modal_and_state(state, block)
-        history.append(replace(state))
         delta = state_delta(start_state, state)
         has_axis_motion = any(abs(delta[k]) > 1e-9 for k in ("x", "y", "z", "a", "b", "c"))
 
@@ -85,4 +83,4 @@ def build_motion_segments(blocks: List[GCodeBlock]) -> Tuple[List[MotionSegment]
     metrics["retract_ratio"] = (
         metrics["retract_count"] / max(metrics["motion_segments"], 1)
     )
-    return segments, metrics, history
+    return segments, metrics

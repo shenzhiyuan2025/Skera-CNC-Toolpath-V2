@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, FileUp, Gauge, History, LoaderCircle, Settings, ShieldAlert, Upload, UserCircle2 } from 'lucide-react';
-import { evaluateToolpath, ToolpathEvaluationResult } from '../services/toolpathApi';
+import { getToolpathJob, startToolpathJob, ToolpathEvaluationResult, ToolpathJobMode, ToolpathJobStatusResponse } from '../services/toolpathApi';
 
 type UiLevel = 'blocker' | 'high' | 'medium' | 'low';
 type Lamp = 'green' | 'yellow' | 'red';
@@ -37,6 +37,11 @@ export const ToolpathBenchmark: React.FC = () => {
   const [error, setError] = useState('');
   const [result, setResult] = useState<ToolpathEvaluationResult | null>(null);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobFileId, setJobFileId] = useState<string | null>(null);
+  const [jobMode, setJobMode] = useState<ToolpathJobMode>('sample');
+  const [jobProgress, setJobProgress] = useState<{ percent: number; lines: number; bytes: number; totalBytes: number } | null>(null);
+  const pollTimer = useRef<number | null>(null);
 
   const hasResult = Boolean(result);
   const displayResult = result;
@@ -64,26 +69,135 @@ export const ToolpathBenchmark: React.FC = () => {
       setError('请上传刀路文件或输入 G 代码文本');
       return;
     }
+    if (pollTimer.current) {
+      window.clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
     setLoading(true);
     setError('');
+    setJobProgress({ percent: 0, lines: 0, bytes: 0, totalBytes: 0 });
+    setJobMode('sample');
     try {
-      const data = await evaluateToolpath({
+      const start = await startToolpathJob({
         file: file || undefined,
-        gcodeText: trimmedText,
+        gcodeText: trimmedText || undefined,
         softwareSource: softwareSource.trim(),
-        machineModel: machineModel.trim()
+        machineModel: machineModel.trim(),
+        mode: 'sample',
+        sampleLines: 50000
       });
-      setResult(data);
+      setJobId(start.job_id);
+      setJobFileId(start.file_id);
+
+      const pollOnce = async () => {
+        const status: ToolpathJobStatusResponse = await getToolpathJob(start.job_id);
+        const rawPercent = typeof status.progress?.percent === 'number' ? status.progress.percent : 0;
+        const rawLines = typeof status.progress?.lines === 'number' ? status.progress.lines : 0;
+        const rawBytes = typeof status.progress?.bytes === 'number' ? status.progress.bytes : 0;
+        const rawTotalBytes = typeof status.progress?.total_bytes === 'number' ? status.progress.total_bytes : 0;
+        setJobProgress({
+          percent: Number.isFinite(rawPercent) ? Math.max(0, Math.min(1, rawPercent)) : 0,
+          lines: Number.isFinite(rawLines) ? Math.max(0, rawLines) : 0,
+          bytes: Number.isFinite(rawBytes) ? Math.max(0, rawBytes) : 0,
+          totalBytes: Number.isFinite(rawTotalBytes) ? Math.max(0, rawTotalBytes) : 0
+        });
+        if (status.status === 'done' && status.result) {
+          setResult(status.result);
+          setLoading(false);
+          if (pollTimer.current) {
+            window.clearInterval(pollTimer.current);
+            pollTimer.current = null;
+          }
+        } else if (status.status === 'error') {
+          setError(status.error || '评测失败');
+          setLoading(false);
+          if (pollTimer.current) {
+            window.clearInterval(pollTimer.current);
+            pollTimer.current = null;
+          }
+        }
+      };
+
+      await pollOnce();
+      pollTimer.current = window.setInterval(() => {
+        void pollOnce();
+      }, 800);
     } catch (e) {
       setError(e instanceof Error ? e.message : '评测失败');
     } finally {
-      setLoading(false);
+      if (!pollTimer.current) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleAnalyzeFull = async () => {
+    if (!jobFileId) {
+      setError('缺少 file_id，无法继续全部评测（请重新开始一次采样评测）');
+      return;
+    }
+    if (pollTimer.current) {
+      window.clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+    setLoading(true);
+    setError('');
+    setJobProgress({ percent: 0, lines: 0, bytes: 0, totalBytes: 0 });
+    setJobMode('full');
+    try {
+      const start = await startToolpathJob({
+        fileId: jobFileId,
+        softwareSource: softwareSource.trim(),
+        machineModel: machineModel.trim(),
+        mode: 'full'
+      });
+      setJobId(start.job_id);
+
+      const pollOnce = async () => {
+        const status: ToolpathJobStatusResponse = await getToolpathJob(start.job_id);
+        const rawPercent = typeof status.progress?.percent === 'number' ? status.progress.percent : 0;
+        const rawLines = typeof status.progress?.lines === 'number' ? status.progress.lines : 0;
+        const rawBytes = typeof status.progress?.bytes === 'number' ? status.progress.bytes : 0;
+        const rawTotalBytes = typeof status.progress?.total_bytes === 'number' ? status.progress.total_bytes : 0;
+        setJobProgress({
+          percent: Number.isFinite(rawPercent) ? Math.max(0, Math.min(1, rawPercent)) : 0,
+          lines: Number.isFinite(rawLines) ? Math.max(0, rawLines) : 0,
+          bytes: Number.isFinite(rawBytes) ? Math.max(0, rawBytes) : 0,
+          totalBytes: Number.isFinite(rawTotalBytes) ? Math.max(0, rawTotalBytes) : 0
+        });
+        if (status.status === 'done' && status.result) {
+          setResult(status.result);
+          setLoading(false);
+          if (pollTimer.current) {
+            window.clearInterval(pollTimer.current);
+            pollTimer.current = null;
+          }
+        } else if (status.status === 'error') {
+          setError(status.error || '评测失败');
+          setLoading(false);
+          if (pollTimer.current) {
+            window.clearInterval(pollTimer.current);
+            pollTimer.current = null;
+          }
+        }
+      };
+
+      await pollOnce();
+      pollTimer.current = window.setInterval(() => {
+        void pollOnce();
+      }, 800);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '评测失败');
+    } finally {
+      if (!pollTimer.current) {
+        setLoading(false);
+      }
     }
   };
 
   const loadPreviewFromFile = async (picked: File) => {
     try {
-      const text = await picked.text();
+      const text = await picked.slice(0, 256 * 1024).text();
       const lines = text.split('\n').slice(0, 400).join('\n');
       setFilePreviewText(lines);
     } catch {
@@ -132,6 +246,15 @@ export const ToolpathBenchmark: React.FC = () => {
     }
     return Array.from(buckets.entries()).sort((a, b) => b[1].length - a[1].length);
   }, [displayResult?.issues]);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimer.current) {
+        window.clearInterval(pollTimer.current);
+        pollTimer.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
@@ -230,6 +353,22 @@ export const ToolpathBenchmark: React.FC = () => {
             </div>
           </div>
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          {loading && jobProgress && (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="mb-2 flex items-center justify-between text-xs text-slate-600">
+                <span>{jobMode === 'sample' ? '流式评测中（采样前5万行）' : '流式评测中（全部评测）'}</span>
+                <span className="font-semibold text-slate-700">{Math.round(jobProgress.percent * 100)}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-200">
+                <div className="h-2 rounded-full bg-slate-700" style={{ width: `${Math.round(jobProgress.percent * 100)}%` }} />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <span>已处理 {jobProgress.lines.toLocaleString()} 行</span>
+                {jobProgress.totalBytes > 0 && <span>{(jobProgress.bytes / 1024 / 1024).toFixed(1)} / {(jobProgress.totalBytes / 1024 / 1024).toFixed(1)} MB</span>}
+                {jobId && <span>Job: {jobId.slice(0, 8)}</span>}
+              </div>
+            </div>
+          )}
         </section>
 
         {hasResult && (
@@ -251,6 +390,34 @@ export const ToolpathBenchmark: React.FC = () => {
               <div className="inline-flex items-center gap-1.5"><Clock3 className="h-4 w-4 text-slate-500" /><span className="text-slate-500">测评时间：</span><span className="font-medium text-slate-800">{new Date().toLocaleString()}</span></div>
             </div>
           </div>
+          {(() => {
+            const sampling = (displayResult?.task_meta as Record<string, unknown> | undefined)?.sampling as
+              | { sampled?: boolean; max_lines?: number; truncated?: boolean }
+              | undefined;
+            const sampled = Boolean(sampling?.sampled);
+            const maxLines = sampling?.max_lines ?? 50000;
+            const truncated = Boolean(sampling?.truncated);
+            const canFull = sampled && truncated && displayResult?.final_conclusion !== 'red' && Boolean(jobFileId);
+            if (!sampled) {
+              return null;
+            }
+            return (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-current/20 bg-white/70 px-4 py-3 text-sm">
+                <div className="text-slate-700">采样前{maxLines.toLocaleString()}行代码进行评测</div>
+                {canFull && (
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeFull}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-60"
+                  >
+                    {loading && jobMode === 'full' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                    全部评测
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </section>
 
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-12">

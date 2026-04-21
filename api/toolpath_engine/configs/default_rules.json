@@ -57,6 +57,13 @@
     "low_z_rapid_blocker_xy_mm": 80.0,
     "local_reposition_depth_tol_mm": 0.8
   },
+  "analysis_limits": {
+    "max_file_bytes": 157286400,
+    "max_issues": 2000,
+    "max_runtime_ms": 55000,
+    "stop_on_first_blocker": true,
+    "max_blocker_issues": 10
+  },
   "d6_rules": {
     "missing_modal_decl_check_lines": 30,
     "max_line_len_warn": 120

@@ -28,7 +28,7 @@ def evaluate_gcode(
     dim_weights = raw_cfg.get("dimension_weights", {}) or {}
 
     blocks = parse_gcode(gcode_text)
-    segments, motion_metrics, _history = build_motion_segments(blocks)
+    segments, motion_metrics = build_motion_segments(blocks)
 
     safety_issues, safety_metrics = run_safety_gate(machine_cfg, segments, supported, raw_cfg)
     issues: List[Issue] = []
